@@ -38,7 +38,7 @@ jobs:
       - name: Decode Classeviva credentials
         run: |
           echo "${{ secrets.CLASSEVIVA_CREDENTIALS }}" | base64 --decode > classeviva_credentials.json
-          tail -c 10 classeviva_credentials.json
+          cat classeviva_credentials.json
 
       - name: Run the Python script
         run: |
