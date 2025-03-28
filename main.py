@@ -16,7 +16,6 @@ SCOPES = ['https://www.googleapis.com/auth/calendar']
 with open("classeviva_credentials.json", "r") as file:
     classeviva_credentials = json.load(file)
 
-ident = classeviva_credentials["ident"]
 password = classeviva_credentials["pass"]
 uid = classeviva_credentials["uid"]
 
@@ -102,7 +101,7 @@ def get_token():
     }
 
     payload = {
-        "ident": ident,
+        "ident": None,
         "pass": password,
         "uid": uid
     }
