@@ -1,0 +1,44 @@
+name: Run Python script
+
+on:
+  push:
+    branches:
+      - main
+  schedule:
+    - cron: '00 12 * * *' 
+  workflow_dispatch: # Permette di eseguire manualmente l'azione
+
+jobs:
+  run-python-script:
+    runs-on: ubuntu-latest  # Usa una macchina virtuale Ubuntu
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v2
+
+      - name: Set up Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: '3.8'  # Usa la versione di Python che ti serve
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt  # Assicurati che le dipendenze siano nel file requirements.txt
+
+      - name: Decode credentials.json
+        run: |
+          echo "${{ secrets.GOOGLE_CREDENTIALS_JSON }}" | base64 --decode > credentials.json
+          
+      - name: Decode token.pickle
+        run: |
+          echo "${{ secrets.GOOGLE_TOKEN_PICKLE }}" | base64 --decode > token.pickle
+
+      - name: Decode Classeviva credentials
+        run: |
+          echo "${{ secrets.CLASSEVIVA_CREDENTIALS }}" | base64 --decode > classeviva_credentials.json
+
+      - name: Run the Python script
+        run: |
+          python main.py  # Modifica questo con il nome corretto del tuo script
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: "credentials.json"  # Indica dove si trova il file di credenziali
