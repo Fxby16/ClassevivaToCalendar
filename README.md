@@ -4,7 +4,6 @@ A Python script that loads your Classeviva calendar and adds the events to your 
 ## Python requirements
 - Python 3.9 or higher
 - `requests`
-- `zoneinfo`
 - `google-auth-oauthlib`
 - `google-api-python-client`
 - `google-auth-httplib2`
