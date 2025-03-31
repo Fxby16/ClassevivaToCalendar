@@ -1,8 +1,8 @@
 import requests
+from datetime import date
 from datetime import datetime
 from datetime import timedelta
-from datetime import timezone
-from dateutil.parser import isoparse
+from zoneinfo import ZoneInfo
 import os
 import json
 import pickle
@@ -13,49 +13,61 @@ from google.auth.transport.requests import Request
 url = "https://web.spaggiari.eu/rest/v1/auth/login"
 SCOPES = ['https://www.googleapis.com/auth/calendar']
 
+# file format
+# {"ident": null, "pass": your_password, "uid": your_uid}
+# uid formar S12345678
+
+# load credentials json
 with open("classeviva_credentials.json", "r") as file:
     classeviva_credentials = json.load(file)
 
+# extract password and uid
 password = classeviva_credentials["pass"]
 uid = classeviva_credentials["uid"]
 
+# google calendar authentication
 def authenticate_google_account():
     creds = None
-    # Se il token di accesso esiste già, caricalo
+    
+    # user already authenticated
     if os.path.exists('token.pickle'):
         with open('token.pickle', 'rb') as token:
-            creds = pickle.load(token)
+            creds = pickle.load(token) # load credentials from file
 
-    # Se non ci sono credenziali o sono scadute, procedi con il flusso OAuth 2.0
+    # authentication not found or invalid, authenticate with OAuth2
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
             creds.refresh(Request())
         else:
-            # Utilizza il file 'credentials.json' per il flusso OAuth 2.0
+            # login using OAuth2 and google calendar API credentials
             flow = InstalledAppFlow.from_client_secrets_file(
                 'credentials.json', SCOPES)
             creds = flow.run_local_server(port=0)
         
-        # Salva le credenziali per il prossimo accesso
+        # save authentication token
         with open('token.pickle', 'wb') as token:
             pickle.dump(creds, token)
 
-    # Costruisci il servizio
     service = build('calendar', 'v3', credentials=creds)
     return service
 
+# check if event already exists
+# if event exists return True, otherwise False
 def event_exists(service, summary, start_time):
+    # set timezone to Europe/Rome if not set
     if start_time.tzinfo is None:
-        start_time = start_time.replace(tzinfo=timezone(timedelta(hours=1)))
+        start_time = start_time.replace(tzinfo=ZoneInfo("Europe/Rome"))
 
-    # Define the time range to search for events
+    # define the time range to search for events
+    # search for events from start_time to start_time + 1 hour
     time_min = start_time.isoformat()
     time_max = (start_time + timedelta(hours=1))
     if time_max.tzinfo is None:
-        time_max = time_max.replace(tzinfo=timezone(timedelta(hours=1)))
+        time_max = time_max.replace(tzinfo=ZoneInfo("Europe/Rome"))
     time_max = time_max.isoformat() 
 
     try:
+        # get events from google calendar
         events_result = service.events().list(
             calendarId='primary',
             timeMin=time_min,
@@ -65,41 +77,56 @@ def event_exists(service, summary, start_time):
         ).execute()
 
         events = events_result.get('items', [])
-        print(f"Checking for existing events between {time_min} and {time_max}...")
 
         for event in events:
-            print(f"Found event: {event['summary']} at {event['start']}")
-            # Compare summary and start time
             event_start = event['start'].get('dateTime', event['start'].get('date'))
-            if event['summary'] == summary and event_start == start_time.isoformat():
-                print(f"Event '{summary}' already exists.")
-                return True
+            event_date = event['start'].get('date')
+
+            # ensure that the event is the same
+            if(event['summary'] == summary):
+                # check date if all day event
+                if(event_date and event_date == start_time.date().isoformat()):
+                    return True
+
+                # check date and time if not all day event
+                if(event_start and event_start == start_time.isoformat()):
+                    return True
     except Exception as e:
-        print(f"Errore durante la verifica dell'evento: {e}")
+        print(f"Error during event verification: {e}")
 
     return False
 
 def create_event(service, event):
-    event_exists_flag = event_exists(service, google_calendar_event['summary'], datetime.fromisoformat(google_calendar_event['start']['dateTime']))
+    if 'dateTime' in event['start']: # check if event is not all day
+        start_time = datetime.fromisoformat(event['start']['dateTime'])
+    else:
+        start_time = datetime.fromisoformat(event['start']['date'])
+
+    # check if event already exists
+    event_exists_flag = event_exists(service, event['summary'], start_time)
     
+    # if event already exists, skip creation
     if event_exists_flag:
-        print(f"Evento '{google_calendar_event['summary']}' già esistente!")
+        print(f"Event '{google_calendar_event['summary']}' already exists")
         return
     
     try:
         event_result = service.events().insert(
             calendarId='primary', body=event).execute()
-        print(f"Evento creato: {event_result.get('htmlLink')}")
+        print(f"Event created: {event_result.get('htmlLink')}")
     except Exception as error:
-        print(f"Si è verificato un errore: {error}")
+        print(f"Error during event creation: {error}")
 
+# get token from classeviva
 def get_token():
+    # mandatory headers
     headers = {
         "User-Agent": "CVVS/std/4.1.7 Android/10",
         "Z-Dev-Apikey": "Tg1NWEwNGIgIC0K",
         "ContentsDiary-Type": "application/json"
     }
 
+    # payload for authentication
     payload = {
         "ident": None,
         "pass": password,
@@ -107,23 +134,35 @@ def get_token():
     }
 
     try:
-        response = requests.post(url, headers=headers, json=payload)
+        response = requests.post(url, headers=headers, json=payload) # send POST request
         response.raise_for_status()
-        #print("Response Status Code:", response.status_code)
-        #print("Response Body:", response.json()) 
     except requests.exceptions.RequestException as e:
         print("An error occurred:", e)
 
-    token = response.json()["token"]
+    token = response.json()["token"] # extract token from response
 
     return token
 
 token = get_token()
 service = authenticate_google_account()
 
-uid_no_s = uid[1:]
-url = f"https://web.spaggiari.eu/rest/v1/students/{uid_no_s}/agenda/all/20250324/20250330"
+uid_no_s = uid[1:] # remove the first character 'S' from uid
+start_date = date.today()
+end_date = date.today()
 
+# set the start date to the next school year if the current date is after June 30
+if(start_date > date(date.today().year, 6, 30)):
+    end_date = date(date.today().year + 1, 6, 30)
+else:
+    end_date = date(date.today().year, 6, 30)
+
+# format the dates to the required format
+formatted_start_date = start_date.strftime("%Y%m%d")
+formatted_end_date = end_date.strftime("%Y%m%d")
+
+url = f"https://web.spaggiari.eu/rest/v1/students/{uid_no_s}/agenda/all/{formatted_start_date}/{formatted_end_date}"
+
+# headers for the request
 headers = {
     "User-Agent": "CVVS/std/4.1.7 Android/10",
     "Z-Dev-Apikey": "Tg1NWEwNGIgIC0K",
@@ -132,27 +171,24 @@ headers = {
 }
 
 try:
-    response = requests.get(url, headers=headers)
+    response = requests.get(url, headers=headers) # send GET request
     response.raise_for_status()
-    #print("Response Status Code:", response.status_code)
-    #print("Response Body:", response.json())
 except requests.exceptions.HTTPError as e:
     print("[HTTP error] Response Body:", response.json())
 except requests.exceptions.RequestException as e:
-    print("An error occurred:", e)
+    print("Error during agenda retrieval:", e)
 
-words_blacklist = ["colloqui", "colloquio", "webex"]
-verifiche = ["verifica", "compito", "prova", "test", "orale", "scritto", "presentazione", "presentazioni", "interrogazione", "interrogazioni", "verifiche", "prove", "test", "orali", "scritti", "presentazioni", "interrogazioni"]
+words_blacklist = ["colloqui", "colloquio", "webex"] 
+tests = ["verifica", "compito", "prova", "test", "orale", "scritto", "presentazione", "presentazioni", "interrogazione", "interrogazioni", "verifiche", "prove", "test", "orali", "scritti", "presentazioni", "interrogazioni"]
 
 for event in response.json().get("agenda", []):
     parsed_begin_date = datetime.fromisoformat(event["evtDatetimeBegin"])
     parsed_end_date = datetime.fromisoformat(event["evtDatetimeEnd"])
-    # print(event["authorName"], ":", event["notes"], "\n", event["isFullDay"], parsed_begin_date, parsed_end_date, "\n")
-
+    
     google_calendar_event = {}
 
     should_skip = False
-    for word in words_blacklist:
+    for word in words_blacklist: # skip events that contain blacklisted words
         if word in event["notes"].lower():
             should_skip = True
             break
@@ -161,12 +197,12 @@ for event in response.json().get("agenda", []):
         continue
 
     color = 1
-    for word in verifiche:
+    for word in tests: # set color to red if event contains test-related words
         if word in event["notes"].lower():
             color = 11
             break
 
-    if(event["isFullDay"]):
+    if(event["isFullDay"]): # build google calendar event if it is an all day event
         google_calendar_event = {
             'summary': event["notes"],
             'description': event["authorName"],
@@ -181,7 +217,7 @@ for event in response.json().get("agenda", []):
                 'useDefault': False,
             }
         }
-    else:
+    else: # build google calendar event if it is not an all day event
         google_calendar_event = {
             'summary': event["notes"],
             'description': event["authorName"],
@@ -199,4 +235,4 @@ for event in response.json().get("agenda", []):
             }
         }
 
-    create_event(service, google_calendar_event)
+    create_event(service, google_calendar_event) # create the event in google calendar
