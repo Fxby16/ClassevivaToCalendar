@@ -1,5 +1,5 @@
 requests
-google-auth
 google-auth-oauthlib
 google-api-python-client
-python-dateutil
+google-auth-httplib2
+zoneinfo
