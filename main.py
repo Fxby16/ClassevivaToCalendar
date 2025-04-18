@@ -15,7 +15,7 @@ SCOPES = ['https://www.googleapis.com/auth/calendar']
 
 # file format
 # {"ident": null, "pass": your_password, "uid": your_uid}
-# uid formar S12345678
+# uid format S12345678
 
 # load credentials json
 with open("classeviva_credentials.json", "r") as file:
@@ -36,13 +36,10 @@ def authenticate_google_account():
 
     # authentication not found or invalid, authenticate with OAuth2
     if not creds or not creds.valid:
-        if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
-        else:
-            # login using OAuth2 and google calendar API credentials
-            flow = InstalledAppFlow.from_client_secrets_file(
-                'credentials.json', SCOPES)
-            creds = flow.run_local_server(port=0)
+        # login using OAuth2 and google calendar API credentials
+        flow = InstalledAppFlow.from_client_secrets_file(
+            'credentials.json', SCOPES)
+        creds = flow.run_local_server(port=0)
         
         # save authentication token
         with open('token.pickle', 'wb') as token:
